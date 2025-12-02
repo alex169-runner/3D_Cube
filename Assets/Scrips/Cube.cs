@@ -1,8 +1,8 @@
+using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using Unity.VisualScripting;
-using UnityEngine;
-using UnityEngine.UIElements;
+using System;
 
 public class Cube : MonoBehaviour
 {
@@ -13,6 +13,8 @@ public class Cube : MonoBehaviour
     private const int FaceCount = 18;
     private List<Vector3Int>[] blocksInFace;
 
+    public int[,,] ID;
+    public Block[] blockOfColor;
     public Block[,,] blocks;
     public Block blockPrefab;
 
@@ -35,6 +37,10 @@ public class Cube : MonoBehaviour
 
     private Queue<Rotation> rotationQueue;
 
+    private CrossStateTable crossTable;
+    private F2LStateTable F2LTable;
+    private OLLStateTable OLLTable;
+    private PLLStateTable PLLTable;
 
     private void Awake()
     {
@@ -47,6 +53,7 @@ public class Cube : MonoBehaviour
 
             DataInitiate();
             SetColor();
+            SetTable();
         } else {
             Destroy(gameObject);
         }
@@ -58,28 +65,34 @@ public class Cube : MonoBehaviour
             Scramble();
         }
 
-        else if (Input.GetKeyDown(KeyCode.LeftShift) ||  Input.GetKeyDown(KeyCode.RightShift)) {
+        if (Input.GetKeyDown(KeyCode.Alpha0)) {
+            if (rotationQueue.Count == 0) {
+                StartCoroutine(SolveCFOP());
+            }
+        }
+
+        if (Input.GetKeyDown(KeyCode.LeftShift) ||  Input.GetKeyDown(KeyCode.RightShift)) {
             direction = -1;
         }
         else if (Input.GetKeyUp(KeyCode.LeftShift) || Input.GetKeyUp(KeyCode.RightShift)) {
             direction = 1;
         }
 
-        else if (Input.GetKeyDown(KeyCode.Space)) {
+        if (Input.GetKeyDown(KeyCode.Space)) {
             multiple = 2;
         }
         else if (Input.GetKeyUp(KeyCode.Space)) {
             multiple = 1;
         }
 
-        else if (Input.GetKeyDown(KeyCode.LeftControl) || Input.GetKeyDown(KeyCode.RightControl)) {
+        if (Input.GetKeyDown(KeyCode.LeftControl) || Input.GetKeyDown(KeyCode.RightControl)) {
             isDoubled = true;
         }
         else if (Input.GetKeyUp(KeyCode.LeftControl) || Input.GetKeyUp(KeyCode.RightControl)) {
             isDoubled = false;
         }
 
-        else if (Input.GetKeyDown(KeyCode.L)) {
+        if (Input.GetKeyDown(KeyCode.L)) {
             AddRotation(isDoubled ? FACE.l : FACE.L, direction, 90 * multiple);
         }
         else if (Input.GetKeyDown(KeyCode.R)) {
@@ -131,39 +144,42 @@ public class Cube : MonoBehaviour
             case FACE.M:
             case FACE.X:
             case FACE.r:
-                pivot = Vector3.right * direction;
-                pivotInt = Vector3Int.up * direction;
+                pivot = Vector3.right;
+                pivotInt = Vector3Int.up;
                 break;
             case FACE.L:
             case FACE.l:
-                pivot = Vector3.left * direction;
-                pivotInt = Vector3Int.down * direction;
+                pivot = Vector3.left;
+                pivotInt = Vector3Int.down;
                 break;
             case FACE.U:
             case FACE.E:
             case FACE.Y:
             case FACE.u:
-                pivot = Vector3.up * direction;
-                pivotInt = Vector3Int.forward * direction;
+                pivot = Vector3.up;
+                pivotInt = Vector3Int.forward;
                 break;
             case FACE.D:
             case FACE.d:
-                pivot = Vector3.down * direction;
-                pivotInt = Vector3Int.back * direction;
+                pivot = Vector3.down;
+                pivotInt = Vector3Int.back;
                 break;
             case FACE.F:
             case FACE.S:
             case FACE.Z:
             case FACE.f:
-                pivot = Vector3.back * direction;
-                pivotInt = Vector3Int.right * direction;
+                pivot = Vector3.back;
+                pivotInt = Vector3Int.right;
                 break;
             case FACE.B:
             case FACE.b:
-                pivot = Vector3.forward * direction;
-                pivotInt = Vector3Int.left * direction;
+                pivot = Vector3.forward;
+                pivotInt = Vector3Int.left;
                 break;
         }
+
+        pivot *= direction;
+        pivotInt *= direction;
 
         rotationQueue.Enqueue(new(face, degree, pivot, pivotInt));
     }
@@ -171,12 +187,142 @@ public class Cube : MonoBehaviour
     private void Scramble()
     {
         int multiple, direction, face;
-        for (int i = 0; i < scrambleMoves - 3; ++i) {
-            multiple = Random.Range(1, 3);
-            direction = Random.Range(0, 2) * 2 - 1;
-            face = Random.Range(0, FaceCount);
-            AddRotation((FACE)face, direction, multiple * 90);
+        for (int i = 0; i < scrambleMoves; ++i) {
+            multiple = UnityEngine.Random.Range(1, 3);
+            direction = UnityEngine.Random.Range(0, 2) * 2 - 1;
+            face = UnityEngine.Random.Range(0, FaceCount - 3);
+            AddRotation((FACE)face, direction, multiple * 90); 
         }
+    }
+
+    private IEnumerator SolveCFOP()
+    {
+        while (rotationQueue.Count > 0 || isRotating) {
+            yield return null;
+        }
+        SolveCross();
+        for (int i = 0; i < 4; ++i) {
+            while (rotationQueue.Count > 0 || isRotating) {
+                yield return null;
+            }
+            SolveF2L(i);
+            if (i < 3) AddRotation(FACE.Y, 1, 90);
+        }
+        for (int i = 0; i < 4; ++i) {
+            while (rotationQueue.Count > 0 || isRotating) {
+                yield return null;
+            }
+            if (SolveOLL()) break;
+            if (i < 3) AddRotation(FACE.U, 1, 90);
+        }
+        for (int i = 0; i < 4; ++i) {
+            bool solved = false;
+            for (int j = 0; j < 4; ++j) {
+                while (rotationQueue.Count > 0 || isRotating) {
+                    yield return null;
+                }
+                if (solved = SolvePLL()) break;
+                AddRotation(FACE.U, 1, 90);
+            }
+            if (solved) break;
+            AddRotation(FACE.Y, 1, 90);
+        }
+    }
+
+    private void SolveCross()
+    {
+        Block cur;
+        long state = 0;
+        int color = 0, xor = 0, id = 0;
+        int[] pos = new int[8]
+        {
+            2, 1,   1, 2,   0, 1,   1, 0
+        };
+
+        for (int i = 0, j = 0; i < 8; i += 2, j ^= 1) {
+            color = blocks[1, 1, 0].color + blocks[pos[i], pos[i + 1], 1].color;
+            cur = blockOfColor[color];
+            id = ID[cur.pos[0] + 1, cur.pos[1] + 1, cur.pos[2] + 1];
+            xor = cur.orientation ^ j ^ blocks[1, 1, 1].orientation;
+            state += (long)((xor << 3) + (i / 2 + 1)) << ((id - 1) * 4);
+        }
+        if (crossTable.TryGetSolution(state, out List<int> solution)) {
+            foreach (var code in solution) {
+                AddRotation((FACE)(code >> 1), (code % 2 == 0 ? 1 : -1 ), 90);
+            }
+        }
+    }
+
+    private void SolveF2L(int phase)
+    {
+        int edgeColor = blocks[2, 1, 1].color + blocks[1, 2, 1].color;
+        int cornerColor = blocks[1, 1, 0].color + edgeColor;
+
+        Block edge = blockOfColor[edgeColor], corner = blockOfColor[cornerColor];
+
+        long edgeOri = edge.orientation ^ blocks[1, 1, 1].orientation, cornerOri = 0;
+        int id = (int)(Mathf.Log(blocks[1, 1, 0].color, 2) + 0.1);
+        int cross = (corner.pos[0] * corner.rot[id].y - corner.pos[1] * corner.rot[id].x) * (corner.pos[2] == -1 ? -1 : 1);
+        if (cross > 0) cornerOri = 1;
+        else if (cross < 0) cornerOri = 2;
+
+        long state = ((edgeOri << 1 | 1) << ((ID[edge.pos[0] + 1, edge.pos[1] + 1, edge.pos[2] + 1] - 1) * 2 + 8)) +
+            ((cornerOri << 1 | 1) << ((ID[corner.pos[0] + 1, corner.pos[1] + 1, corner.pos[2] + 1] - 13) * 3 + 32));
+
+        if (F2LTable.TryGetSolution(phase, state, out List<int> solution)) {
+            foreach (var code in solution) {
+                AddRotation((FACE)(code >> 1), code % 2 == 0 ? 1 : -1, 90);
+            }
+        }
+    }
+
+    private bool SolveOLL()
+    {
+        long state = 0L;
+        int id = (int)(Mathf.Log(blocks[1, 1, 2].color, 2) + 0.1);
+        for (int i = 2; i >= 0; --i) {
+            for (int j = 0; j < 3; ++j) {
+                var block = blocks[i, j, 2];
+                var rot = block.rot[id];
+                state = (state << 4) + Mathf.Abs(rot.x) * (-rot.x + 2) + Mathf.Abs(rot.y) * (-rot.y + 3) + rot.z * 5;
+            }
+        }
+
+        if (OLLTable.TryGetSolution(state, out List<int> solution)) {
+            foreach (var s in solution) {
+                AddRotation((FACE)(s >> 2), s % 2 == 0 ? 1 : -1, s % 4 > 1 ? 180 : 90);
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool SolvePLL()
+    {
+        int[,] order = new int[4, 2]
+        {
+            { 2, 1 }, { 1, 2 }, { 0, 1 }, { 1, 0 }
+        };
+
+        long state = 0;
+        for (int i = 0, j = 3; i < 4; ++i, j = i - 1) {
+            var corner = blockOfColor[blocks[1, 1, 2].color + blocks[order[i, 0], order[i, 1], 1].color + blocks[order[j, 0], order[j, 1], 1].color];
+            state = (state << 4) + ID[corner.pos[0] + 1, corner.pos[1] + 1, corner.pos[2] + 1] - 16;
+        }
+        for (int i = 0; i < 4; ++i) {
+            var edge = blockOfColor[blocks[1, 1, 2].color + blocks[order[i, 0], order[i, 1], 1].color];
+            state = (state << 4) + ID[edge.pos[0] + 1, edge.pos[1] + 1, edge.pos[2] + 1] - 8;
+        }
+
+        if (PLLTable.TryGetSolution(state, out List<int> solution)) {
+            foreach (var s in solution) {
+                AddRotation((FACE)(s >> 2), s % 2 == 0 ? 1 : -1, s % 4 > 1 ? 180 : 90);
+            }
+            return true;
+        }
+
+        return false;
     }
 
     private IEnumerator StartRotation(int count, Rotation rotation)
@@ -209,7 +355,7 @@ public class Cube : MonoBehaviour
     {
         for (int i = 0; i < blocksInFace[(int)face].Count; ++i) {
             var pos = blocksInFace[(int)face][i];
-            blocks[pos.x, pos.y, pos.z].gameObject.transform.parent = gameObject.transform;
+            blocks[pos.x, pos.y, pos.z].transform.parent = transform;
         }
     }
 
@@ -217,9 +363,9 @@ public class Cube : MonoBehaviour
     {
         for (int i = 0; i < blocksInFace[(int)face].Count; ++i) {
             var pos = blocksInFace[(int)face][i];
-            blocks[pos.x, pos.y, pos.z].gameObject.transform.parent = null;
+            blocks[pos.x, pos.y, pos.z].transform.parent = null;
         }
-        gameObject.transform.rotation = Quaternion.identity;
+        transform.rotation = Quaternion.identity;
     }
 
     private void ReLocate(FACE face, bool doubled, Vector3Int pivotInt)
@@ -238,44 +384,85 @@ public class Cube : MonoBehaviour
         }
     }
 
+    private void SetTable()
+    {
+        crossTable = Resources.Load<CrossStateTable>("StateTables/CrossStateTable");
+        if (crossTable == null) {
+            Debug.Log("crossTable not set");
+        }
+
+        F2LTable = Resources.Load<F2LStateTable>("StateTables/F2LStateTables");
+        if (F2LTable == null) {
+            Debug.Log("F2LTable not set");
+        }
+
+        OLLTable = Resources.Load<OLLStateTable>("StateTables/OLLStateTable");
+        if (OLLTable == null) {
+            Debug.Log("OLLTable not set");
+        }
+
+        PLLTable = Resources.Load<PLLStateTable>("StateTables/PLLStateTable");
+        if (PLLTable == null) {
+            Debug.Log("PLLTable not set");
+        }
+    }
+
     private void SetColor()
     {
         for (int i = 0; i < blocksInFace[(int)FACE.L].Count; ++i) {
             var pos = blocksInFace[(int)FACE.L][i];
             var block = blocks[pos.x, pos.y, pos.z];
+            block.color |= 1 << 4;
+            block.rot[4] = new(0, -1, 0);
             var mr = block.transform.Find("Left").GetComponent<MeshRenderer>();
             mr.material.color = new(1, 0.5f, 0);
         }
         for (int i = 0; i < blocksInFace[(int)FACE.R].Count; ++i) {
             var pos = blocksInFace[(int)FACE.R][i];
             var block = blocks[pos.x, pos.y, pos.z];
+            block.color |= 1 << 2;
+            block.rot[2] = new(0, 1, 0);
             var mr = block.transform.Find("Right").GetComponent<MeshRenderer>();
             mr.material.color = Color.red;
         }
         for (int i = 0; i < blocksInFace[(int)FACE.U].Count; ++i) {
             var pos = blocksInFace[(int)FACE.U][i];
             var block = blocks[pos.x, pos.y, pos.z];
+            block.color |= 1 << 5;
+            block.rot[5] = new(0, 0, 1);
             var mr = block.transform.Find("Up").GetComponent<MeshRenderer>();
             mr.material.color = Color.yellow;
         }
         for (int i = 0; i < blocksInFace[(int)FACE.D].Count; ++i) {
             var pos = blocksInFace[(int)FACE.D][i];
             var block = blocks[pos.x, pos.y, pos.z];
+            block.color |= 1 << 0;
+            block.rot[0] = new(0, 0, -1);
             var mr = block.transform.Find("Down").GetComponent<MeshRenderer>();
             mr.material.color = Color.white;
         }
         for (int i = 0; i < blocksInFace[(int)FACE.F].Count; ++i) {
             var pos = blocksInFace[(int)FACE.F][i];
             var block = blocks[pos.x, pos.y, pos.z];
+            block.color |= 1 << 1;
+            block.rot[1] = new(1, 0, 0);
             var mr = block.transform.Find("Front").GetComponent<MeshRenderer>();
             mr.material.color = Color.blue;
         }
         for (int i = 0; i < blocksInFace[(int)FACE.B].Count; ++i) {
             var pos = blocksInFace[(int)FACE.B][i];
             var block = blocks[pos.x, pos.y, pos.z];
+            block.color |= 1 << 3;
+            block.rot[3] = new(-1, 0, 0);
             var mr = block.transform.Find("Back").GetComponent<MeshRenderer>();
             mr.material.color = Color.green;
         }
+
+        blockOfColor = new Block[1 << 6];
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 3; ++j)
+                for (int k = 0; k < 3; ++k)
+                    blockOfColor[blocks[i, j, k].color] = blocks[i, j, k];
     }
 
     private void DataInitiate()
@@ -286,6 +473,36 @@ public class Cube : MonoBehaviour
         multiple = 1;
 
         rotationQueue = new Queue<Rotation>();
+
+        int node = 0;
+        int[] pos = new int[3 * 20]
+        {
+            2, 1, 0,
+            1, 2, 0,
+            0, 1, 0,
+            1, 0, 0,
+            2, 0, 1,
+            2, 2, 1,
+            0, 2, 1,
+            0, 0, 1,
+            2, 1, 2,
+            1, 2, 2,
+            0, 1, 2,
+            1, 0, 2,
+
+            2, 0, 0,
+            2, 2, 0,
+            0, 2, 0,
+            0, 0, 0,
+            2, 0, 2,
+            2, 2, 2,
+            0, 2, 2,
+            0, 0, 2
+        };
+        ID = new int[3, 3, 3];
+        for (int i = 0; i < 3 * 20; i += 3) {
+            ID[pos[i], pos[i + 1], pos[i + 2]] = ++node;
+        }
 
         blocks = new Block[3, 3, 3];
         for (int i = 0; i < 3; ++i) {

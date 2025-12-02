@@ -13,10 +13,10 @@ public class PeekCamera : MonoBehaviour
     public float minVerticalAngle = 10f;
     public float maxVerticalAngle = 170f;
 
-    private float currentHorizontalAngle = 0f;
-    private float currentVerticalAngle = 90f;
-    private float targetHorizontalAngle = 0f;
-    private float targetVerticalAngle = 90f;
+    private float currentHorizontalAngle;
+    private float currentVerticalAngle;
+    private float targetHorizontalAngle;
+    private float targetVerticalAngle;
     private float startHorizontalAngle = -90f;
     private float startVerticalAngle = 90f;
 
