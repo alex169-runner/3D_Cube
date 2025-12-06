@@ -3,7 +3,7 @@ using UnityEngine;
 
 [CreateAssetMenu(fileName = "F2LStateTable", menuName = "CubeSolver/F2LStateTable")]
 public class F2LStateTable : ScriptableObject
-{
+{  
     [System.Serializable]
     public class StateSolution
     {

@@ -95,6 +95,15 @@ public class PLLTableEditor : EditorWindow
         // 构建资产在项目中的相对路径
         string assetRelativePath = $"Assets/{folderName}/PLLStateTable.asset";
 
+        if (System.IO.File.Exists(System.IO.Path.Combine(Application.dataPath, folderName, "PLLStateTable.asset"))) {
+            // 删除已存在的资产
+            if (!AssetDatabase.DeleteAsset(assetRelativePath)) {
+                Debug.LogError($"删除已有资产失败: {assetRelativePath}");
+                return;
+            }
+            Debug.Log($"已删除现有资产: {assetRelativePath}");
+        }
+
         // 使用AssetDatabase创建资产
         AssetDatabase.CreateAsset(currentTable, assetRelativePath);
         AssetDatabase.SaveAssets(); // 保存项目范围的变更[citation:2]

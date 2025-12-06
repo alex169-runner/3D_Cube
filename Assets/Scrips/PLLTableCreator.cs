@@ -42,7 +42,7 @@ public class PLLTableCreator : MonoBehaviour
         // 1
         0x1234_4132L,
         0x1234_2431L,
-        0x1234_3142L,
+        0x1234_3412L,
         0x1234_4321L,
         0x2314_1234L,
         // 6
