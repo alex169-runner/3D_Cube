@@ -141,7 +141,6 @@ public class Cube : MonoBehaviour
 
         switch (face) {
             case FACE.R:
-            case FACE.M:
             case FACE.X:
             case FACE.r:
                 pivot = Vector3.right;
@@ -149,11 +148,11 @@ public class Cube : MonoBehaviour
                 break;
             case FACE.L:
             case FACE.l:
+            case FACE.M:
                 pivot = Vector3.left;
                 pivotInt = Vector3Int.down;
                 break;
             case FACE.U:
-            case FACE.E:
             case FACE.Y:
             case FACE.u:
                 pivot = Vector3.up;
@@ -161,6 +160,7 @@ public class Cube : MonoBehaviour
                 break;
             case FACE.D:
             case FACE.d:
+            case FACE.E:
                 pivot = Vector3.down;
                 pivotInt = Vector3Int.back;
                 break;
